@@ -6,6 +6,7 @@
 //-----------------------------------------------------------------------
 using SonarQube.Plugins.Common;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -18,7 +19,7 @@ namespace SonarQube.Plugins.Common
     /// </summary>
     public sealed class AssemblyResolver : IDisposable
     {
-        private readonly string[] rootSearchPaths;
+        private readonly List<string> rootSearchPaths = new List<string>();
         private readonly ILogger logger;
 
         /// <summary>
@@ -35,7 +36,12 @@ namespace SonarQube.Plugins.Common
                 throw new ArgumentException(Resources.Resolver_ConstructorNoPaths);
             }
 
-            this.rootSearchPaths = rootSearchPaths;            
+            if (rootSearchPaths != null)
+            {
+                this.rootSearchPaths.AddRange(rootSearchPaths);
+            }
+
+            this.rootSearchPaths.Add(GetAssemblyDirectory(Assembly.GetExecutingAssembly()));
             this.logger = logger;
 
             // This line required to resolve the Resources object before additional assembly resolution is added
@@ -59,9 +65,17 @@ namespace SonarQube.Plugins.Common
                 {
                     asm = Assembly.LoadFile(file);
 
-                    if (string.Equals(args.Name, asm.FullName, StringComparison.CurrentCultureIgnoreCase))
+                    var assemblyName = new AssemblyName(args.Name);
+                    if (assemblyName.Version == asm.GetName().Version)
                     {
-                        this.logger.LogDebug(Resources.Resolver_AssemblyLocated, file);
+                        // exact version match
+                        this.logger.LogDebug(Resources.Resolver_AssemblyLocated, asm.FullName);
+                        return asm;
+                    }
+                    else if (assemblyName.Version < asm.GetName().Version)
+                    {
+                        // we are using a higher version then requested (should we look for the same version in other places first?)
+                        this.logger.LogDebug(Resources.Resolver_AssemblyLocated, asm.FullName);
                         return asm;
                     }
                     else
@@ -122,5 +136,19 @@ namespace SonarQube.Plugins.Common
             Dispose(true);
         }
         #endregion
+
+        /// <summary>
+        /// Determins the folder where the specified <paramref name="assembly"/> is located and returns it.
+        /// </summary>
+        /// <returns>
+        /// The folder where the specified <paramref name="assembly"/> is located.
+        /// </returns>
+        private static string GetAssemblyDirectory(Assembly assembly)
+        {
+            string codeBase = assembly.CodeBase;
+            UriBuilder uri = new UriBuilder(codeBase);
+            string path = Uri.UnescapeDataString(uri.Path);
+            return Path.GetDirectoryName(path);
+        }
     }
 }
