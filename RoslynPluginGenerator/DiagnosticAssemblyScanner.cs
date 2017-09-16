@@ -107,7 +107,7 @@ namespace SonarQube.Plugins.Roslyn
                 // Dispose of the AssemblyResolver instance, if applicable
                 if (additionalAssemblyResolver != null)
                 {
-                    additionalAssemblyResolver.Dispose();
+                    // additionalAssemblyResolver.Dispose();
                 }
             }
 
