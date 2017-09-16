@@ -48,7 +48,7 @@ namespace SonarQube.Plugins.Common
         public Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args) // set to public for test purposes
         {
             // This line causes a StackOverflowException unless Resources has already been called upon previously
-            this.logger.LogDebug(Resources.Resolver_ResolvingAssembly, args.Name, args.RequestingAssembly.FullName);
+            this.logger.LogDebug(Resources.Resolver_ResolvingAssembly, args.Name, args.RequestingAssembly != null ? args.RequestingAssembly.FullName : string.Empty);
             Assembly asm = null;
 
             string fileName = CreateFileNameFromAssemblyName(args.Name);
