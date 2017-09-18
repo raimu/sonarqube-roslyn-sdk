@@ -1,9 +1,23 @@
-//-----------------------------------------------------------------------
-// <copyright file="AssemblyResolverTests.cs" company="SonarSource SA and Microsoft Corporation">
-//   Copyright (c) SonarSource SA and Microsoft Corporation.  All rights reserved.
-//   Licensed under the MIT License. See License.txt in the project root for license information.
-// </copyright>
-//-----------------------------------------------------------------------
+/*
+ * SonarQube Roslyn SDK
+ * Copyright (C) 2015-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
 using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
@@ -20,78 +34,36 @@ namespace SonarQube.Plugins.CommonTests
     {
         public TestContext TestContext { get; set; }
 
-        /// <summary>
-        /// Compiles the supplied code into a new assembly
-        /// </summary>
-        private static Assembly CompileAssembly(string code, string outputFilePath, ILogger logger)
+        #region Tests
+
+        [TestMethod]
+        public void AssemblyResolver_Creation()
         {
-            CSharpCodeProvider provider = new CSharpCodeProvider();
+            // 1. Null logger
+            AssertException.Expect<ArgumentNullException>(() => new AssemblyResolver(null, new string[] { this.TestContext.TestDeploymentDir }));
 
-            CompilerParameters options = new CompilerParameters();
-            options.OutputAssembly = outputFilePath;
-            options.GenerateExecutable = true;
-            options.GenerateInMemory = false;
+            // 2. Null paths
+            AssertException.Expect<ArgumentException>(() => new AssemblyResolver(new TestLogger(), null));
 
-            CompilerResults result = provider.CompileAssemblyFromSource(options, code);
-
-            if (result.Errors.Count > 0)
-            {
-                foreach (string item in result.Output)
-                {
-                    logger.LogInfo(item);
-                }
-                Assert.Fail("Test setup error: failed to create dynamic assembly. See the test output for compiler output");
-            }
-
-            return result.CompiledAssembly;
+            // 3. Empty paths
+            AssertException.Expect<ArgumentException>(() => new AssemblyResolver(new TestLogger(), new string[] { }));
         }
 
-        private static Assembly CompileSimpleAssembly(string outputFilePath, ILogger logger)
-        {
-            return CompileAssembly(@"public class SimpleProgram {
-              public static void Main(string[] args) {
-                System.Console.WriteLine(""Hello World"");
-              }
-            }", outputFilePath, logger);
-        }
-
-        #region tests
-
         /// <summary>
-        /// Tests that method for creating file names from assembly names is correct.
+        /// Tests the loading of an assembly with a single type and no dependencies. This should succeed even without the AssemblyResolver.
         /// </summary>
         [TestMethod]
-        public void TestAssemblyNameFileNameAssociation()
-        {
-            // Arrange
-            TestLogger logger = new TestLogger();
-            Assembly assembly = typeof(AssemblyResolver).Assembly;
-            string assemblyName = assembly.FullName;
-            string actualFileName = Path.GetFileName(assembly.Location);
-
-            // Act
-            string testFileName = AssemblyResolver.CreateFileNameFromAssemblyName(assemblyName);
-
-            // Assert
-            Assert.AreEqual<string>(actualFileName, testFileName);
-        }
-
-        /// <summary>
-        /// Tests the loading of an assembly with a single type and no dependencies. This should succeed even without AssemblyResolver.
-        /// </summary>
-        [TestMethod]
-        public void TestNoImpactOnDefaultResolution()
+        public void AssemblyResolver_NoImpactOnDefaultResolution()
         {
             // Arrange
             TestLogger logger = new TestLogger();
             string testFolder = TestUtils.CreateTestDirectory(this.TestContext);
-            string simpleAssemblyPath = Path.Combine(testFolder, "SimpleAssembly.dll");
-            Assembly simpleAssembly = CompileSimpleAssembly(simpleAssemblyPath, logger);
+            CompileSimpleAssembly("SimpleAssembly.dll", testFolder, logger);
 
             object simpleObject = null;
 
             // Act
-            using (new AssemblyResolver(logger, testFolder))
+            using (AssemblyResolver resolver = new AssemblyResolver(logger, testFolder))
             {
                 // Look in every assembly under the supplied directory
                 foreach (string assemblyPath in Directory.GetFiles(testFolder, "*.dll", SearchOption.AllDirectories))
@@ -106,59 +78,215 @@ namespace SonarQube.Plugins.CommonTests
                         }
                     }
                 }
-            }
 
-            // Assert
-            Assert.IsNotNull(simpleObject);
-            Assert.AreEqual<string>("SimpleProgram", simpleObject.GetType().ToString());
+                // Assert
+                Assert.IsNotNull(simpleObject);
+                Assert.AreEqual<string>("SimpleProgram", simpleObject.GetType().ToString());
+                AssertResolverCaller(resolver);
+
+            }
         }
 
         /// <summary>
         /// Tests the case where assembly resolution should fail correctly.
         /// </summary>
         [TestMethod]
-        public void TestAssemblyResolutionFail()
+        public void AssemblyResolver_NonExistentAssembly_ResolutionFails()
         {
             // Arrange
             TestLogger logger = new TestLogger();
             string testFolder = TestUtils.CreateTestDirectory(this.TestContext);
 
             // Act
-            Assembly resolveResult;
-            using (AssemblyResolver assemblyResolver = new AssemblyResolver(logger, testFolder))
+            using (AssemblyResolver resolver = new AssemblyResolver(logger, testFolder))
             {
-                ResolveEventArgs resolveEventArgs = new ResolveEventArgs("nonexistent library", this.GetType().Assembly);
-                resolveResult = assemblyResolver.CurrentDomain_AssemblyResolve(this, resolveEventArgs);
-            }
+                AssertAssemblyLoadFails("nonexistent library");
 
-            // Assert
-            Assert.IsNull(resolveResult);
+                // Assert
+                AssertResolverCaller(resolver);
+            }
         }
 
         /// <summary>
         /// Tests the case where assembly resolution should succeed.
         /// </summary>
         [TestMethod]
-        public void TestAssemblyResolution()
+        public void AssemblyResolver_ResolutionByFullAssemblyName_Succeeds()
         {
             // Arrange
-            TestLogger logger = new TestLogger();
             string testFolder = TestUtils.CreateTestDirectory(this.TestContext);
-            String simpleAssemblyPath = Path.Combine(testFolder, "SimpleAssembly.dll");
-            Assembly simpleAssembly = CompileSimpleAssembly(simpleAssemblyPath, logger);
-            
+            Assembly testAssembly = CompileSimpleAssembly("SimpleAssemblyByFullName.dll", testFolder, new TestLogger());
+
+            // Act
+            Assembly resolvedAssembly = AssertAssemblyLoadSucceedsOnlyWithResolver("SimpleAssemblyByFullName, Version = 1.0.0.0, Culture = neutral, PublicKeyToken = null", testFolder);
+
+            // Assert
+            AssertExpectedAssemblyLoaded(testAssembly, resolvedAssembly);
+        }
+
+        /// <summary>
+        /// Tests the case where assembly resolution should succeed.
+        /// </summary>
+        [TestMethod]
+        public void AssemblyResolver_ResolutionByFileName_Succeeds()
+        {
+            // Arrante
+            string testFolder = TestUtils.CreateTestDirectory(this.TestContext);
+            Assembly testAssembly = CompileSimpleAssembly("SimpleAssemblyByFileName.dll", testFolder, new TestLogger());
+
+            // Act
+            Assembly resolvedAssembly = AssertAssemblyLoadSucceedsOnlyWithResolver("SimpleAssemblyByFileName.dll", testFolder);
+
+            // Assert
+            AssertExpectedAssemblyLoaded(testAssembly, resolvedAssembly);
+        }
+
+        /// <summary>
+        /// Tests the case where assembly resolution should succeed.
+        /// </summary>
+        [TestMethod]
+        public void AssemblyResolver_ResolutionByFullAssemblyNameWithSpace_Succeeds()
+        {
+            // Arrange
+            string testFolder = TestUtils.CreateTestDirectory(this.TestContext);
+            Assembly testAssembly = CompileSimpleAssembly("Space in Name ByFullName.dll", testFolder, new TestLogger());
+
+            // Act
+            Assembly resolvedAssembly = AssertAssemblyLoadSucceedsOnlyWithResolver("Space in Name ByFullName, Version = 1.0.0.0, Culture = neutral, PublicKeyToken = null", testFolder);
+
+            // Assert
+            AssertExpectedAssemblyLoaded(testAssembly, resolvedAssembly);
+        }
+
+        /// <summary>
+        /// Tests the case where assembly resolution should succeed.
+        /// </summary>
+        [TestMethod]
+        public void AssemblyResolver_ResolutionByFileNameWithSpace_Succeeds()
+        {
+            // Arrante
+            string testFolder = TestUtils.CreateTestDirectory(this.TestContext);
+            Assembly testAssembly = CompileSimpleAssembly("Space in Name ByFileName.dll", testFolder, new TestLogger());
+
+            // Act
+            Assembly resolvedAssembly = AssertAssemblyLoadSucceedsOnlyWithResolver("Space in Name ByFileName.dll", testFolder);
+
+            // Assert
+            AssertExpectedAssemblyLoaded(testAssembly, resolvedAssembly);
+        }
+
+        /// <summary>
+        /// Tests the case where assembly resolution should succeed.
+        /// </summary>
+        [TestMethod]
+        public void AssemblyResolver_VersionAssemblyRequested()
+        {
+            // Setup
+            string testFolder = TestUtils.CreateTestDirectory(this.TestContext);
+            Assembly testAssembly = CompileSimpleAssembly("VersionAsm1.dll", testFolder, new TestLogger(), "2.1.0.4");
+
+            // 1. Search for a version that can be found -> succeeds
+            Assembly resolvedAssembly = AssertAssemblyLoadSucceedsOnlyWithResolver("VersionAsm1, Version = 2.1.0.4, Culture = neutral, PublicKeyToken = null", testFolder);
+            AssertExpectedAssemblyLoaded(testAssembly, resolvedAssembly);
+
+            // 2. Search for a version that can't be found -> fails
+            using (AssemblyResolver resolver = new AssemblyResolver(new TestLogger(), testFolder))
+            {
+                AssertAssemblyLoadFails("VersionAsm1, Version = 1.0.0.4, Culture = neutral, PublicKeyToken = null");
+                AssertResolverCaller(resolver);
+            }
+        }
+
+        #endregion
+
+        #region Private methods
+
+        private Assembly CompileSimpleAssembly(string assemblyFileName, string asmFolder, ILogger logger, string version = "1.0.0.0")
+        {
+            Directory.CreateDirectory(asmFolder);
+            string fullAssemblyFilePath = Path.Combine(asmFolder, assemblyFileName);
+
+            return CompileAssembly(@"public class SimpleProgram {
+              public static void Main(string[] args) {
+                System.Console.WriteLine(""Hello World"");
+              }
+            }", fullAssemblyFilePath, version, logger);
+        }
+
+        /// <summary>
+        /// Compiles the supplied code into a new assembly
+        /// </summary>
+        private static Assembly CompileAssembly(string code, string outputFilePath, string asmVersion, ILogger logger)
+        {
+            string versionedCode = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                @"[assembly:System.Reflection.AssemblyVersionAttribute(""{0}"")]
+{1}", asmVersion, code);
+
+            CompilerResults result = null;
+            using (CSharpCodeProvider provider = new CSharpCodeProvider())
+            {
+                CompilerParameters options = new CompilerParameters();
+                options.OutputAssembly = outputFilePath;
+                options.GenerateExecutable = true;
+                options.GenerateInMemory = false;
+
+                result = provider.CompileAssemblyFromSource(options, versionedCode);
+
+                if (result.Errors.Count > 0)
+                {
+                    foreach (string item in result.Output)
+                    {
+                        logger.LogInfo(item);
+                    }
+                    Assert.Fail("Test setup error: failed to create dynamic assembly. See the test output for compiler output");
+                }
+            }
+
+            return result.CompiledAssembly;
+        }
+
+        #endregion
+
+        #region Checks
+
+        private static void AssertAssemblyLoadFails(string asmRef)
+        {
+            AssertException.Expect<FileNotFoundException>(() => Assembly.Load(asmRef));
+        }
+
+        private Assembly AssertAssemblyLoadSucceedsOnlyWithResolver(string asmRef, string searchPath)
+        {
+            // Check the assembly load fails without the assembly resolver
+            AssertAssemblyLoadFails(asmRef);
+
             // Act
             Assembly resolveResult;
-            using (AssemblyResolver assemblyResolver = new AssemblyResolver(logger, testFolder))
+
+            // Create a test logger that will only record output from the resolver
+            // so we can check it has been called
+            using (AssemblyResolver resolver = new AssemblyResolver(new TestLogger(), searchPath))
             {
-                ResolveEventArgs resolveEventArgs = new ResolveEventArgs(simpleAssembly.FullName, this.GetType().Assembly);
-                resolveResult = assemblyResolver.CurrentDomain_AssemblyResolve(this, resolveEventArgs);
+                resolveResult = Assembly.Load(asmRef);
+
+                // Assert
+                AssertResolverCaller(resolver);
             }
 
             // Assert
-            Assert.IsNotNull(resolveResult);
-            Assert.AreEqual<string>(simpleAssembly.ToString(), resolveResult.ToString());
-            Assert.AreEqual<string>(simpleAssemblyPath, resolveResult.Location);
+            Assert.IsNotNull(resolveResult, "Failed to the load the assembly");
+
+            return resolveResult;
+        }
+
+        private static void AssertResolverCaller(AssemblyResolver resolver)
+        {
+            Assert.IsTrue(resolver.ResolverCalled, "Expected the assembly resolver to have been called");
+        }
+
+        private static void AssertExpectedAssemblyLoaded(Assembly expected, Assembly resolved)
+        {
+            Assert.IsNotNull(resolved, "Resolved assembly should not be null");
+            Assert.AreEqual(expected.Location, resolved.Location, "Failed to load the expected assembly");
         }
 
         #endregion

@@ -1,9 +1,23 @@
-//-----------------------------------------------------------------------
-// <copyright file="ArgumentProcessor.cs" company="SonarSource SA and Microsoft Corporation">
-//   Copyright (c) SonarSource SA and Microsoft Corporation.  All rights reserved.
-//   Licensed under the MIT License. See License.txt in the project root for license information.
-// </copyright>
-//-----------------------------------------------------------------------
+/*
+ * SonarQube Roslyn SDK
+ * Copyright (C) 2015-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
 using SonarQube.Plugins.Common;
 using SonarQube.Common;
 using System;
@@ -19,32 +33,58 @@ namespace SonarQube.Plugins.Roslyn.CommandLine
         #region Argument definitions
 
         /// <summary>
-        /// Ids for supported arguments
+        /// Unique IDs for supported arguments that may have multiple aliases.
         /// </summary>
         private static class KeywordIds
         {
             public const string AnalyzerRef = "analyzer.ref";
             public const string SqaleXmlFile = "sqale.xml";
+            public const string AcceptLicenses = "accept.licenses";
+            public const string RecurseDependencies = "recurse.dependencies";
         }
 
         private static IList<ArgumentDescriptor> Descriptors;
 
         static ArgumentProcessor()
         {
-            // Initialise the set of valid descriptors.
+            // Initialize the set of valid descriptors.
             // To add a new argument, just add it to the list.
             Descriptors = new List<ArgumentDescriptor>();
 
             Descriptors.Add(new ArgumentDescriptor(
                 id: KeywordIds.AnalyzerRef, prefixes: new string[] { "/analyzer:", "/a:" }, required: true, allowMultiple: false, description: CmdLineResources.ArgDescription_AnalzyerRef));
             Descriptors.Add(new ArgumentDescriptor(
-                id: KeywordIds.SqaleXmlFile, prefixes: new string[] { "/sqale:", "/s:" }, required: false, allowMultiple: false, description: CmdLineResources.ArgDescription_SqaleXmlFile));
+                id: KeywordIds.SqaleXmlFile, prefixes: new string[] { "/sqale:" }, required: false, allowMultiple: false, description: CmdLineResources.ArgDescription_SqaleXmlFile));
+            Descriptors.Add(new ArgumentDescriptor(
+                id: KeywordIds.AcceptLicenses, prefixes: new string[] { "/acceptLicenses" }, required: false, allowMultiple: false, description: CmdLineResources.ArgDescription_AcceptLicenses, isVerb: true));
+            Descriptors.Add(new ArgumentDescriptor(
+                id: KeywordIds.RecurseDependencies, prefixes: new string[] { "/recurse" }, required: false, allowMultiple: false, description: CmdLineResources.ArgDescription_RecurseDependencies, isVerb: true));
 
             Debug.Assert(Descriptors.All(d => d.Prefixes != null && d.Prefixes.Any()), "All descriptors must provide at least one prefix");
             Debug.Assert(Descriptors.Select(d => d.Id).Distinct().Count() == Descriptors.Count, "All descriptors must have a unique id");
         }
 
         #endregion Argument definitions
+
+        private class NuGetReference
+        {
+            private readonly string packageId;
+            private readonly NuGet.SemanticVersion version;
+
+            public NuGetReference(string packageId, NuGet.SemanticVersion version)
+            {
+                if (string.IsNullOrWhiteSpace(packageId))
+                {
+                    throw new ArgumentNullException("packageId");
+                }
+                this.packageId = packageId;
+                this.version = version;
+            }
+
+            public string PackageId { get { return this.packageId; } }
+            public NuGet.SemanticVersion Version { get { return this.version; } }
+        }
+
 
         public static ProcessedArgs TryProcessArguments(string[] commandLineArgs, ILogger logger)
         {
@@ -79,10 +119,20 @@ namespace SonarQube.Plugins.Roslyn.CommandLine
             string sqaleFilePath;
             parsedOk &= TryParseSqaleFile(arguments, out sqaleFilePath);
 
+            bool acceptLicense = GetLicenseAcceptance(arguments);
+            bool recurseDependencies = GetRecursion(arguments);
+
             if (parsedOk)
             {
                 Debug.Assert(analyzerRef != null, "Expecting to have a valid analyzer reference");
-                processed = new ProcessedArgs(analyzerRef, sqaleFilePath);
+                processed = new ProcessedArgs(
+                    analyzerRef.PackageId,
+                    analyzerRef.Version,
+                    SupportedLanguages.CSharp, /* TODO: support multiple languages */
+                    sqaleFilePath,
+                    acceptLicense,
+                    recurseDependencies,
+                    System.IO.Directory.GetCurrentDirectory());
             }
 
             return processed;
@@ -156,6 +206,18 @@ namespace SonarQube.Plugins.Roslyn.CommandLine
                 }
             }
             return sucess;
+        }
+
+        private static bool GetLicenseAcceptance(IEnumerable<ArgumentInstance> arguments)
+        {
+            ArgumentInstance arg = arguments.SingleOrDefault(a => ArgumentDescriptor.IdComparer.Equals(KeywordIds.AcceptLicenses, a.Descriptor.Id));
+            return arg != null;
+        }
+
+        private static bool GetRecursion(IEnumerable<ArgumentInstance> arguments)
+        {
+            ArgumentInstance arg = arguments.SingleOrDefault(a => ArgumentDescriptor.IdComparer.Equals(KeywordIds.RecurseDependencies, a.Descriptor.Id));
+            return arg != null;
         }
 
     }

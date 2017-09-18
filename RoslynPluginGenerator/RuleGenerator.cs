@@ -1,9 +1,23 @@
-//-----------------------------------------------------------------------
-// <copyright file="RuleGenerator.cs" company="SonarSource SA and Microsoft Corporation">
-//   Copyright (c) SonarSource SA and Microsoft Corporation.  All rights reserved.
-//   Licensed under the MIT License. See License.txt in the project root for license information.
-// </copyright>
-//-----------------------------------------------------------------------
+/*
+ * SonarQube Roslyn SDK
+ * Copyright (C) 2015-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using SonarQube.Plugins.Common;
@@ -32,7 +46,7 @@ namespace SonarQube.Plugins.Roslyn
         #region IRuleGenerator
 
         /// <summary>
-        /// Generate SonarQube specifc rules based on Roslyn based diagnostics
+        /// Generate SonarQube specific rules based on Roslyn based diagnostics
         /// </summary>
         public Rules GenerateRules(IEnumerable<DiagnosticAnalyzer> analyzers)
         {
@@ -46,7 +60,7 @@ namespace SonarQube.Plugins.Roslyn
             foreach (DiagnosticAnalyzer analyzer in analyzers)
             {
                 Rules analyzerRules = GetAnalyzerRules(analyzer);
-                
+
                 foreach (Rule analyzerRule in analyzerRules)
                 {
                     if (rules.Any(r => String.Equals(r.Key, analyzerRule.Key, Rule.RuleKeyComparer)))
@@ -58,7 +72,7 @@ namespace SonarQube.Plugins.Roslyn
                     rules.Add(analyzerRule);
                 }
             }
-            
+
             return rules;
         }
 
@@ -81,7 +95,7 @@ namespace SonarQube.Plugins.Roslyn
                 }
 
                 Rule newRule = new Rule();
-                
+
                 newRule.Key = diagnostic.Id;
                 newRule.InternalKey = diagnostic.Id;
 
@@ -95,19 +109,19 @@ namespace SonarQube.Plugins.Roslyn
                 newRule.Status = Status;
 
                 // Diagnostic properties that don't have an obvious Rule xml equivalent:
-                //diagnostic.Category;
-                //diagnostic.IsEnabledByDefault;
-                //diagnostic.MessageFormat;
+                //  diagnostic.Category
+                //  diagnostic.IsEnabledByDefault
+                //  diagnostic.MessageFormat
 
                 /* Remark: Custom tags are used so that Visual Studio handles diagnostics and are not equivalent to SonarQube's tags
                 *
                 * http://stackoverflow.com/questions/24257222/relevance-of-new-parameters-for-diagnosticdescriptor-constructor
-                * customTags is a general way to mark that a diagnostic should be treated or displayed somewhat 
-                * different than normal diagnostics. The "unnecessary" tag means that in the IDE we fade out the span 
-                * that the diagnostic applies to: this is how we fade out unnecessary usings or casts or such in the IDE. 
-                * In some fancy scenarios you might want to define your own, but for the most part you'll either leave that empty 
-                * or pass Unnecessary if you want the different UI handling. 
-                * The EditAndContinue tag is for errors that are created if an edit-and-continue edit can't be applied 
+                * customTags is a general way to mark that a diagnostic should be treated or displayed somewhat
+                * different than normal diagnostics. The "unnecessary" tag means that in the IDE we fade out the span
+                * that the diagnostic applies to: this is how we fade out unnecessary usings or casts or such in the IDE.
+                * In some fancy scenarios you might want to define your own, but for the most part you'll either leave that empty
+                * or pass Unnecessary if you want the different UI handling.
+                * The EditAndContinue tag is for errors that are created if an edit-and-continue edit can't be applied
                 * (which are also displayed somewhat differently)...that's just for us (n.b. Roslyn) to use.
                 */
 

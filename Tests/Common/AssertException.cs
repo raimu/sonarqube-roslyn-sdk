@@ -1,9 +1,23 @@
-//-----------------------------------------------------------------------
-// <copyright file="AssertException.cs" company="SonarSource SA and Microsoft Corporation">
-//   Copyright (c) SonarSource SA and Microsoft Corporation.  All rights reserved.
-//   Licensed under the MIT License. See License.txt in the project root for license information.
-// </copyright>
-//-----------------------------------------------------------------------
+/*
+ * SonarQube Roslyn SDK
+ * Copyright (C) 2015-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 
@@ -14,9 +28,9 @@ namespace SonarQube.Plugins.Test.Common
         /// <summary>
         /// Checks that the expected exception is thrown when the code is executed
         /// </summary>
-        public static Exception Expect<T>(Action op)
+        public static T Expect<T>(Action op) where T : Exception
         {
-            Exception actual = null;
+            T actual = null;
             try
             {
                 op();
@@ -27,10 +41,10 @@ namespace SonarQube.Plugins.Test.Common
                     "Thrown exception is not of the expected type. Expected: {0}, actual: {1}",
                     typeof(T).FullName,
                     ex.GetType().FullName);
-                actual = ex;
+                actual = (T)ex;
             }
 
-            Assert.IsNotNull(actual, "Expecting an exception to be throw");
+            Assert.IsNotNull(actual, "Expecting an exception to be thrown");
             return actual;
         }
     }

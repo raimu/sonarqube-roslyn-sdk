@@ -1,9 +1,23 @@
-﻿//-----------------------------------------------------------------------
-// <copyright file="CommandLineParser.cs" company="SonarSource SA and Microsoft Corporation">
-//   Copyright (c) SonarSource SA and Microsoft Corporation.  All rights reserved.
-//   Licensed under the MIT License. See License.txt in the project root for license information.
-// </copyright>
-//-----------------------------------------------------------------------
+﻿/*
+ * SonarQube Roslyn SDK
+ * Copyright (C) 2015-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
 using SonarQube.Plugins.Common;
 using System;
 using System.Collections.Generic;
@@ -15,9 +29,9 @@ namespace SonarQube.Common
     /// <summary>
     /// Process and validates the command line arguments and reports any errors
     /// </summary>
-    /// <remarks>The command line parsing makes a number of simplying assumptions:
+    /// <remarks>The command line parsing makes a number of simplifying assumptions:
     /// * order is unimportant
-    /// * all arguments have a recognisable prefix e.g. /key= 
+    /// * all arguments have a recognizable prefix e.g. /key=
     /// * the first matching prefix will be used (so if descriptors have overlapping prefixes they need
     ///   to be supplied to the parser in the correct order on construction)
     /// * the command line arguments are those supplied in Main(args) i.e. they have been converted
@@ -46,7 +60,7 @@ namespace SonarQube.Common
                 throw new ArgumentNullException("descriptors");
             }
 
-            if (!(descriptors.Select(d => d.Id).Distinct(ArgumentDescriptor.IdComparer).Count() == descriptors.Count()))
+            if (descriptors.Select(d => d.Id).Distinct(ArgumentDescriptor.IdComparer).Count() != descriptors.Count())
             {
                 throw new ArgumentException(Resources.ERROR_Parser_UniqueDescriptorIds, "descriptors");
             }
@@ -72,7 +86,7 @@ namespace SonarQube.Common
 
 
             bool parsedOk = true;
-            
+
             // List of values that have been recognized
             IList<ArgumentInstance> recognized = new List<ArgumentInstance>();
 
@@ -149,10 +163,10 @@ namespace SonarQube.Common
 
         private static string TryGetMatchingPrefix(ArgumentDescriptor descriptor, string argument)
         {
-            Debug.Assert(descriptor.Prefixes.Where(p => argument.StartsWith(p, ArgumentDescriptor.IdComparison)).Count() < 2,
+            Debug.Assert(descriptor.Prefixes.Count(p => argument.StartsWith(p, ArgumentDescriptor.IdComparison)) < 2,
                 "Not expecting the argument to match multiple prefixes");
 
-            string match = null;
+            string match;
             if (descriptor.IsVerb)
             {
                 // Verbs match the whole argument
@@ -193,6 +207,6 @@ namespace SonarQube.Common
             }
             return allExist;
         }
-        
+
     }
 }

@@ -1,10 +1,24 @@
-//-----------------------------------------------------------------------
-// <copyright file="RulesGeneratorTests.cs" company="SonarSource SA and Microsoft Corporation">
-//   Copyright (c) SonarSource SA and Microsoft Corporation.  All rights reserved.
-//   Licensed under the MIT License. See License.txt in the project root for license information.
-// </copyright>
-//-----------------------------------------------------------------------
-using ExampleAnalyzer1;
+/*
+ * SonarQube Roslyn SDK
+ * Copyright (C) 2015-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+using RoslynAnalyzer11;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Linq;
@@ -55,8 +69,8 @@ namespace SonarQube.Plugins.Roslyn.RuleGeneratorTests
             // Arrange
             TestLogger logger = new TestLogger();
             ConfigurableAnalyzer analyzer = new ConfigurableAnalyzer();
-            var diagnostic1 = analyzer.RegisterDiagnostic(key: "DiagnosticID1", tags: new[] { "t1" });
-            var diagnostic2 = analyzer.RegisterDiagnostic(key: "DiagnosticID2", tags: new[] { "T2" });
+            analyzer.RegisterDiagnostic(key: "DiagnosticID1", tags: new[] { "t1" });
+            analyzer.RegisterDiagnostic(key: "DiagnosticID2", tags: new[] { "T2" });
 
             IRuleGenerator generator = new RuleGenerator(logger);
 
@@ -78,9 +92,9 @@ namespace SonarQube.Plugins.Roslyn.RuleGeneratorTests
             // Arrange
             TestLogger logger = new TestLogger();
             ConfigurableAnalyzer analyzer = new ConfigurableAnalyzer();
-            var diagnostic1 = analyzer.RegisterDiagnostic(key: "DiagnosticID1", description: null);
-            var diagnostic2 = analyzer.RegisterDiagnostic(key: "DiagnosticID1", description: "");
-            var diagnostic3 = analyzer.RegisterDiagnostic(key: "DiagnosticID2", description: " ");
+            analyzer.RegisterDiagnostic(key: "DiagnosticID1", description: null);
+            analyzer.RegisterDiagnostic(key: "DiagnosticID1", description: "");
+            analyzer.RegisterDiagnostic(key: "DiagnosticID2", description: " ");
 
             IRuleGenerator generator = new RuleGenerator(logger);
 
@@ -99,13 +113,6 @@ namespace SonarQube.Plugins.Roslyn.RuleGeneratorTests
         #endregion Tests
 
         #region Checks
-
-        private static void ValidateRule(Rules rules, string expectedKey, string[] expectedTags)
-        {
-            Rule rule = rules.SingleOrDefault(r => r.Key == expectedKey);
-            Assert.IsNotNull(rule, "No rule found with the Key " + expectedKey);
-            CollectionAssert.AreEquivalent(rule.Tags, expectedTags, "Mismatch in rule tags");
-        }
 
         private static void AssertExpectedRuleCount(int expected, Rules rules)
         {
@@ -137,7 +144,7 @@ namespace SonarQube.Plugins.Roslyn.RuleGeneratorTests
             {
                 foreach (String tag in rule.Tags)
                 {
-                    Assert.IsTrue(String.Equals(tag, tag.ToLower(), StringComparison.CurrentCulture));
+                    Assert.IsTrue(String.Equals(tag, tag.ToLowerInvariant(), StringComparison.InvariantCulture));
                 }
             }
         }

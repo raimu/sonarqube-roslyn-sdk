@@ -1,12 +1,24 @@
-//-----------------------------------------------------------------------
-// <copyright file="AssemblyResolver.cs" company="SonarSource SA and Microsoft Corporation">
-//   Copyright (c) SonarSource SA and Microsoft Corporation.  All rights reserved.
-//   Licensed under the MIT License. See License.txt in the project root for license information.
-// </copyright>
-//-----------------------------------------------------------------------
-using SonarQube.Plugins.Common;
+/*
+ * SonarQube Roslyn SDK
+ * Copyright (C) 2015-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -19,8 +31,12 @@ namespace SonarQube.Plugins.Common
     /// </summary>
     public sealed class AssemblyResolver : IDisposable
     {
-        private readonly List<string> rootSearchPaths = new List<string>();
+        private const string DllExtension = ".dll";
+
+        private readonly string[] rootSearchPaths;
         private readonly ILogger logger;
+
+        public bool ResolverCalled { get; private set; } // for testing
 
         /// <summary>
         /// Create a new AssemblyResolver that will search in the given directories (recursively) for dependencies.
@@ -31,17 +47,14 @@ namespace SonarQube.Plugins.Common
             if (logger == null)
             {
                 throw new ArgumentNullException("logger");
-            } else if (rootSearchPaths == null || rootSearchPaths.Length < 1)
-            {
-                throw new ArgumentException(Resources.Resolver_ConstructorNoPaths);
             }
-
-            if (rootSearchPaths != null)
+            if (rootSearchPaths == null || rootSearchPaths.Length < 1)
             {
-                this.rootSearchPaths.AddRange(rootSearchPaths);
+                throw new ArgumentException(Resources.Resolver_ConstructorNoPaths, "rootSearchPaths");
             }
+            this.ResolverCalled = true;
 
-            this.rootSearchPaths.Add(GetAssemblyDirectory(Assembly.GetExecutingAssembly()));
+            this.rootSearchPaths = rootSearchPaths;
             this.logger = logger;
 
             // This line required to resolve the Resources object before additional assembly resolution is added
@@ -51,13 +64,18 @@ namespace SonarQube.Plugins.Common
             AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
         }
 
-        public Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args) // set to public for test purposes
+        private Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
         {
             // This line causes a StackOverflowException unless Resources has already been called upon previously
-            this.logger.LogDebug(Resources.Resolver_ResolvingAssembly, args.Name, args.RequestingAssembly != null ? args.RequestingAssembly.FullName : string.Empty);
-            Assembly asm = null;
+            this.logger.LogDebug(Resources.Resolver_ResolvingAssembly, args.Name, args?.RequestingAssembly?.FullName ?? Resources.Resolver_UnspecifiedRequestingAssembly);
+            Assembly asm;
 
-            string fileName = CreateFileNameFromAssemblyName(args.Name);
+            // The supplied assembly name could be a file name or an assembly full name. Work out which it is
+            bool isFileName = Utilities.IsAssemblyLibraryFileName(args.Name);
+
+            // Now work out the file name we are looking for
+            string fileName = GetAssemblyFileName(args.Name);
+
 
             foreach (string rootSearchPath in rootSearchPaths)
             {
@@ -65,17 +83,15 @@ namespace SonarQube.Plugins.Common
                 {
                     asm = Assembly.LoadFile(file);
 
-                    var assemblyName = new AssemblyName(args.Name);
-                    if (assemblyName.Version == asm.GetName().Version)
+                    if (
+                        // If the input was e.g foo.dll then compare against the file name...
+                        (isFileName && string.Equals(Path.GetFileName(asm.Location), fileName,  StringComparison.OrdinalIgnoreCase))
+                        ||
+                        // ... otherwise compare against the full name
+                        (!isFileName && string.Equals(args.Name, asm.FullName, StringComparison.OrdinalIgnoreCase))
+                        )
                     {
-                        // exact version match
-                        this.logger.LogDebug(Resources.Resolver_AssemblyLocated, asm.FullName);
-                        return asm;
-                    }
-                    else if (assemblyName.Version < asm.GetName().Version)
-                    {
-                        // we are using a higher version then requested (should we look for the same version in other places first?)
-                        this.logger.LogDebug(Resources.Resolver_AssemblyLocated, asm.FullName);
+                        this.logger.LogDebug(Resources.Resolver_AssemblyLocated, file);
                         return asm;
                     }
                     else
@@ -89,28 +105,22 @@ namespace SonarQube.Plugins.Common
         }
 
         /// <summary>
-        /// Attempts to create the name of the file associated with a given assembly name.
+        /// Turns the input assembly ref argument into an files name.
+        /// The input might be a file name (e.g. foo.dll) or a full assembly name
+        /// (e.g. SimpleAssemblyByFullName, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null)
         /// </summary>
-        public static string CreateFileNameFromAssemblyName(string input) // Public for testing purposes
+        private static string GetAssemblyFileName(string input)
         {
             Debug.Assert(input != null);
             Debug.Assert(input.Length > 0);
 
-            if (input.EndsWith(".dll"))
+            if (Utilities.IsAssemblyLibraryFileName(input))
             {
                 return input;
             }
 
-            string result = input;
-            if (input.Contains(" "))
-            {
-                // If the assembly name has multiple words (seperated by spaces), use only the first word
-                // (e.g. "foo bar" -> "foo")
-                string[] parts = input.Split(new char[] { ' ' });
-                result = parts[0].Substring(0, parts[0].Length - 1);
-            }
-
-            return  result + ".dll";
+            AssemblyName assemblyName = new AssemblyName(input);
+            return assemblyName.Name + DllExtension;
         }
 
         #region IDisposable Support
@@ -122,6 +132,7 @@ namespace SonarQube.Plugins.Common
             {
                 if (disposing)
                 {
+                    this.logger.LogDebug(Resources.Resolver_Dispose);
                     AppDomain.CurrentDomain.AssemblyResolve -= CurrentDomain_AssemblyResolve;
                 }
 
@@ -136,19 +147,5 @@ namespace SonarQube.Plugins.Common
             Dispose(true);
         }
         #endregion
-
-        /// <summary>
-        /// Determins the folder where the specified <paramref name="assembly"/> is located and returns it.
-        /// </summary>
-        /// <returns>
-        /// The folder where the specified <paramref name="assembly"/> is located.
-        /// </returns>
-        private static string GetAssemblyDirectory(Assembly assembly)
-        {
-            string codeBase = assembly.CodeBase;
-            UriBuilder uri = new UriBuilder(codeBase);
-            string path = Uri.UnescapeDataString(uri.Path);
-            return Path.GetDirectoryName(path);
-        }
     }
 }
